@@ -4,6 +4,7 @@ Created on Mon Mar 11 06:46:36 2019
 
 @author: Devlin
 """
+import pkmn_toolkit as kit
 ###############################################################################
 ## The Inputs #################################################################
 # Defense #####################################################################
@@ -31,8 +32,7 @@ dragon = [[15, 14, 17], [9, 10, 11, 12], []]
 dark = [[1, 6, 17], [7, 16], [13]]
 fairy = [[3, 8], [1, 16], [15]]
 
-
-t = ["Normal", "Fighting", "Flying", "Poison", "Ground", "Rock", "Bug", "Ghost", "Steel", "Fire", "Water", "Grass", "Electric", "Psychic", "Ice", "Dragon", "Dark", "Fairy"]
+t = kit.type_list
 
 defense_list = [normal, fighting, flying, poison, ground, rock, bug, ghost, steel, fire, water, grass, electric, psychic, ice, dragon, dark, fairy]
 
@@ -98,10 +98,10 @@ for key in defense_dict:
 def defense_calculator(first, second = False):        
     
     if second == False or second == first:
-        return defense_dict[t.index(first)]
+        return first.raw_defense
     else:
-        a = defense_dict[t.index(first)]
-        b = defense_dict[t.index(second)]
+        a = first.raw_defense
+        b = second.raw_defense
         n = []
     
         for i in a:
@@ -125,10 +125,10 @@ def defense_calculator(first, second = False):
 def offense_calculator(first, second = False):        
     
     if second == False or second == first:
-        return offense_dict[t.index(first)]
+        return first.raw_offense
     
-    a = offense_dict[t.index(first)]
-    b = offense_dict[t.index(second)]
+    a = first.raw_offense
+    b = second.raw_offense
     n = []
     
     for i in a:
@@ -138,32 +138,7 @@ def offense_calculator(first, second = False):
         
     return sorted(n, key = lambda x: x[0])
 
-###############################################################################
-## Setup for using the function                                             ###
-## Running from powershell                                                  ###
-###############################################################################
-def type_check(text):
-    while True:
-        ptype = input(text).capitalize()
-        if ptype not in t:
-            print("Not a Valid Type")
-        else:
-            break
-        
-    return ptype
 
-###############################################################################
-## To help pull instances from a list                                       ###
-###############################################################################
-def selectro(array, Name):
-    """Yes, it's on purpose"""
-    try:
-        x = [i for i in array if i.name.lower() == Name][0]
-    except IndexError:
-        print('That name isn\'t in the list')
-    else:
-        return x
-    
 ###############################################################################
 ## Single Energy Types ########################################################
 ###############################################################################
@@ -172,7 +147,9 @@ class Energy_Type():
         self.type_id = type_id
         self.name = name
         self.raw_defense = raw_defense
-        self.raw_offense = raw_offense            
+        self.raw_offense = raw_offense    
+
+        self.covers = [i[0] for i in self.raw_offense if i[1] > 1]        
     
     ###########################################################################    
     def __str__(self):
@@ -180,14 +157,37 @@ class Energy_Type():
     
     def __repr__(self):
         return self.name
+    
+###############################################################################
+## Data Generation ############################################################        
+###############################################################################
+all_types = []
+for key in defense_dict:
+    ET = Energy_Type(key, t[key], defense_dict[key], offense_dict[key])
+    all_types.append(ET)
+    
+no_type = Energy_Type('255', 'No Type', [[i, 1] for i in t], [[i, 0] for i in t])
+
+###############################################################################
+def type_check(text):
+    '''returns a type object when given its str name'''
+    while True:
+        ptype = input(text).capitalize()
+        if ptype not in t:
+            print("Not a Valid Type")
+        else:
+            break
+    
+    dex = t.index(ptype)
+    return all_types[dex]
 
 ###############################################################################
 ## Practical Typings ##########################################################
 ###############################################################################
 class Typing():
-    def __init__(self, ptype, stype):
+    def __init__(self, ptype, stype = no_type):
         self.ptype_heavy = ptype
-        self.stype_heavy = self.stype_handle(stype)
+        self.stype_heavy = stype
         self.ptype = self.ptype_heavy.name
         self.stype = self.stype_heavy.name           
         self.types = [self.ptype, self.stype]
@@ -197,6 +197,7 @@ class Typing():
     
     ###########################################################################
     def see(self, org):
+        '''prints a list of all types with the given effects'''
         a = {'resist':    [i[0] for i in self.defensive_raw if i[1] < 1],
              'weak':      [i[0] for i in self.defensive_raw if i[1] > 1],
              'walled':    [i[0] for i in self.offensive_raw if i[1] < 1],
@@ -208,6 +209,7 @@ class Typing():
     
     ###########################################################################
     def gaps(self, pos):
+        '''prints the complement of the above lists'''
         b = {'not covered': [e for e in t if e not in self.see('cover')],
              'not resisted': [e for e in t if e not in self.see('resist')]}
         
@@ -215,6 +217,7 @@ class Typing():
 
     ###########################################################################    
     def get_effectiveness(self, output):
+        '''combines the effectiveness of both base types'''
         do = self.ptype_heavy.raw_defense
         oo = self.ptype_heavy.raw_offense
         dt = self.stype_heavy.raw_defense
@@ -238,6 +241,7 @@ class Typing():
     
     ###########################################################################
     def typing_modify(self, mod, energy, stance = 'defense'):
+        '''used in conjunction with abilities to modify a typings effectiveness'''
         s = {'defense': self.defensive_raw,
              'offense': self.offensive_raw}
         
@@ -247,47 +251,14 @@ class Typing():
                 x[i][1] *= mod
     
     ###########################################################################
-    def get_coverage(self):
-        coverage = []
-        for q in all_types:
-            for i in self.see('weak'):    
-                if i in q.covers and i not in self.types:
-                    coverage.append(q.name)
-                    coverage.append(q.name)
-                    
-            for i in self.see('walled'):
-                if i in q.covers:
-                    coverage.append(q.name)
-                    
-            for i in self.gaps('not covered'):
-                if i in q.covers:
-                    coverage.append(q.name)
-
-        return coverage
-    
-    ###########################################################################
-    def tcheck(self, e, check = 'stab'):
-        compare = {'stab': self.types,
-                   'need': self.get_coverage()}
+    def __str__(self):
+        if self.stype == 'No Type':
+            return self.ptype
+        else:
+            return '{}/{}'.format(self.ptype, self.stype)
         
-        return e in compare.get(check)
-    
-    ###########################################################################    
-    def stype_handle(self, given):
-        out = {True: no_type,
-               False: given}
-        
-        return out.get(given is False)
-
-###############################################################################
-## Data Generation ############################################################        
-###############################################################################
-all_types = []
-for key in defense_dict:
-    ET = Energy_Type(key, t[key], defense_dict[key], offense_dict[key])
-    all_types.append(ET)
-    
-no_type = Energy_Type('255', 'No Type', [[i, 1] for i in t], [[i, 0] for i in t])
+    def __repr__(self):
+        return self.__str__()
 
 ###############################################################################
 ## Quick Check ################################################################
